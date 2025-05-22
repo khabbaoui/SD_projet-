@@ -1,134 +1,95 @@
-Projet de Ville Intelligente – Smart City IoT
-Ce projet simule une ville intelligente (Smart City) qui centralise les données générées par plusieurs capteurs IoT simulés. Il permet de suivre en temps réel les mesures suivantes :
 
-🚗 Le trafic routier
+#  Smart City – Système Distribué de Supervision des Ressources Urbaines
 
-⚡ La consommation d’énergie
+##  Description
 
-💧 La consommation d’eau
+Ce projet met en œuvre un système distribué temps réel permettant de simuler, analyser, stocker et visualiser les données provenant de capteurs urbains dans le contexte d'une ville intelligente. Il gère plusieurs types de ressources : eau, énergie, etc.
 
-Les données sont générées par des producteurs Kafka, stockées dans InfluxDB via un consumer Kafka, puis visualisées grâce à Grafana sur des tableaux de bord dynamiques.
+Les données sont simulées via un code Java, transmises via Apache Kafka, analysées par un service centralisé, stockées dans InfluxDB et visualisées avec Grafana.
 
-📌 Objectifs
-Centraliser les données de capteurs simulés
+---
 
-Utiliser Kafka pour gérer les flux de données
+##  Architecture du Projet
 
-Stocker les données dans InfluxDB
+```
+[ Capteurs Simulés (Java) ]
+          │
+     → Apache Kafka
+          │
+     → Service REST (JAX-RS)
+          │
+     → Analyse + Alertes
+          │
+     ├──→ InfluxDB (stockage)
+     └──→ Grafana (visualisation)
+```
 
-Visualiser les données avec Grafana
+---
 
-🧱 Architecture du projet
-mermaid
-graph TD
-  A[Capteurs simulés<br>(Producers Kafka)] -->|Envoi données| B[Topics Kafka]
-  B --> C[Consumer Kafka]
-  C -->|Insertion| D[InfluxDB]
-  D --> E[Tableaux de bord<br>Grafana]
-🛠️ Technologies utilisées
-Apache Kafka & Zookeeper : pour le streaming des données
+##  Fonctionnalités
 
-InfluxDB : base de données de séries temporelles
+-  Simulation de capteurs (eau, énergie, trafic)
+-  Envoi des données vers Kafka (format JSON)
+-  API REST pour démarrer les consommateurs Kafka
+-  Génération d'alertes en cas d'anomalie
+-  Stockage dans InfluxDB
+-  Dashboard interactif via Grafana
 
-Grafana : visualisation des données
+---
 
-Java (Maven) : pour l’implémentation des producteurs et du consommateur
+## Technologies Utilisées
 
-Docker Compose : pour orchestrer les conteneurs
+- Java 21
+- Apache Kafka
+- Jersey (JAX-RS)
+- InfluxDB
+- Grafana
+- Maven
+- Jetty (serveur embarqué)
 
-📁 Structure du projet
-bash
-smart-city-project/
-│
-├── docker-compose.yml         # Déploiement de Kafka, InfluxDB, Grafana
-├── producer/                  # Code des producteurs Kafka (simulateurs de capteurs)
-├── consumer/                  # Code du consommateur Kafka
-├── pom.xml                    # Dépendances Maven
-└── README.md                  # Fichier d'explication du projet
-🚀 Lancer le projet
-1. Cloner le projet
-bash
-git clone https://github.com/ton-utilisateur/smart-city-project.git
-cd smart-city-project
-2. Démarrer les services avec Docker Compose
-bash
-docker-compose up -d
-Cela lance :
+---
+---
 
-Zookeeper (nécessaire à Kafka)
+### Étapes :
+### Prérequis
 
-Kafka
+- Java 21
+- Maven
+- Kafka & Zookeeper installés
+- InfluxDB installé et en cours d'exécution
+- Grafana configuré avec InfluxDB comme datasource
 
-InfluxDB
+##  Lancement du Projet
+###  Avec Docker Compose 
 
-Grafana
+ 1. tu peux lancer tous les services (Zookeeper, Kafka, InfluxDB, Grafana) à l'aide de Docker Compose.
 
-3. Installer les dépendances Java
-Dans le dossier du projet :
+2. Créer les topics :
+   ```bash
+   kafka-topics.sh --create --topic consommation-eau --bootstrap-server localhost:9092
+   kafka-topics.sh --create --topic energy-usage --bootstrap-server localhost:9092
+   kafka-topics.sh --create --topic traffic-data --bootstrap-server localhost:9092
+   ```
 
-bash
-mvn clean install
-4. Exécuter les producteurs et le consommateur
-Exécuter les producteurs qui simulent les capteurs :
+3. Lancer le projet :
+   ```bash
+   mvn clean install
+   mvn jetty:run
+   ```
 
-bash
-java -jar producer/target/producer.jar
-Exécuter le consommateur Kafka :
+4. Appeler l’API REST pour démarrer les consommateurs :
+   ```
+   GET http://localhost:8080/api/sensor/start-consumer
+   ```
 
-bash
-java -jar consumer/target/consumer.jar
-Tu verras dans le terminal :
+##  Auteur
 
-La génération des données pour les 3 capteurs
+- **Nom :** KHABBAOUI Othmane-Imrane RABAH -HAFID Haitam
+- **Projet :** Mini-projet - Systèmes Distribués
+- **Encadrante :** M. GUERMAH Hatim
 
-Le consommateur qui lit et insère dans InfluxDB
+---
 
-📊 Accéder à Grafana
-Ouvre Grafana via http://localhost:3000
+##  Licence
 
-Connecte-toi avec les identifiants par défaut :
-
-Username: admin
-
-Password: admin
-
-Ajoute une data source InfluxDB
-
-Crée des tableaux de bord pour visualiser :
-
-Le trafic
-
-La consommation d’énergie
-
-La consommation d’eau
-
-📦 Kafka – Topics utilisés
-Les producteurs envoient les données dans les topics suivants :
-
-traffic-sensor
-
-energy-sensor
-
-water-sensor
-
-📚 Exemple de données générées
-json
-{
-  "sensorId": "sensor-1",
-  "type": "energy",
-  "value": 56.2,
-  "timestamp": "2025-05-22T10:21:00Z"
-}
-✅ À faire
- Simuler des capteurs
-
- Connecter Kafka à InfluxDB
-
- Visualiser les données sur Grafana
-
- Ajouter une interface utilisateur Web (optionnel)
-
- Ajouter l’authentification Grafana et sécuriser les accès
-
-📄 Licence
-Ce projet est sous licence MIT. Tu peux l’utiliser, le modifier et le distribuer librement.
+Projet académique réalisé dans le cadre d’un cours universitaire. Usage libre à des fins pédagogiques.
