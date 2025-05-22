@@ -23,8 +23,11 @@ Les données sont simulées via un code Java, transmises via Apache Kafka, analy
      ├──→ InfluxDB (stockage)
      └──→ Grafana (visualisation)
 ```
+![architecture](https://github.com/user-attachments/assets/73c5f0ff-a34b-497b-8c78-aa0bcd276f48)
 
 ---
+![Description de l'image](assets/images/mon-image.png)
+
 
 ##  Fonctionnalités
 
