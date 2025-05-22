@@ -11,10 +11,6 @@ import jakarta.servlet.annotation.WebListener;
 import org.apache.kafka.clients.consumer.*;
 import org.json.JSONObject;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.time.Duration;
 import java.util.Collections;
@@ -23,32 +19,30 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 @WebListener
-public class WaterSensorConsumer implements Runnable, ServletContextListener {
-    // Configuration
+public class TrafficSensorConsumer implements Runnable, ServletContextListener {
     private static final String INFLUX_URL = System.getenv().getOrDefault("INFLUX_URL", "http://localhost:8086");
     private static final String INFLUX_TOKEN = System.getenv().getOrDefault("INFLUX_TOKEN", "my-super-secret-auth-token");
     private static final String INFLUX_ORG = System.getenv().getOrDefault("INFLUX_ORG", "smartcity");
     private static final String INFLUX_BUCKET = System.getenv().getOrDefault("INFLUX_BUCKET", "sensor_data");
-    private static final String KAFKA_TOPIC = "consommation-eau";
+    private static final String KAFKA_TOPIC = "traffic-data";
     private static final String KAFKA_BROKER = System.getenv().getOrDefault("KAFKA_BROKER", "localhost:9092");
-    private static final String ALERT_WEBHOOK_URL = System.getenv().getOrDefault("ALERT_WEBHOOK_URL", "http://alert-service:8080/api/alerts");
 
-    // Seuil d'alerte (en litres/minute)
-    private static final double CONSOMMATION_ALERTE_SEUIL = 4;
+    // Seuils d'alerte
+    private static final int TRAFFIC_DENSITY_ALERT = 15; // véhicules/min
+    private static final double LOW_SPEED_ALERT = 20.0; // km/h
+    private static final double HIGH_SPEED_ALERT = 70.0; // km/h
 
     private ExecutorService executor;
     private InfluxDBClient influxDBClient;
-    private HttpClient httpClient;
 
     @Override
     public void contextInitialized(ServletContextEvent sce) {
-        System.out.println("==== INITIALISATION DU CONSOMMATEUR CAPTEUR EAU ====");
-        System.out.println("Configuration des alertes - Seuil: " + CONSOMMATION_ALERTE_SEUIL + " L/min");
-        System.out.println("Webhook d'alerte: " + ALERT_WEBHOOK_URL);
+        System.out.println("==== INITIALISATION DU CONSOMMATEUR CAPTEUR TRAFIC ====");
+        System.out.println("Seuils d'alerte - Densité: > " + TRAFFIC_DENSITY_ALERT + " véhicules/min");
+        System.out.println("Seuils d'alerte - Vitesse: < " + LOW_SPEED_ALERT + " km/h ou > " + HIGH_SPEED_ALERT + " km/h");
 
         try {
             influxDBClient = InfluxDBClientFactory.create(INFLUX_URL, INFLUX_TOKEN.toCharArray(), INFLUX_ORG, INFLUX_BUCKET);
-            httpClient = HttpClient.newHttpClient();
             executor = Executors.newSingleThreadExecutor();
             executor.submit(this);
         } catch (Exception e) {
@@ -59,7 +53,7 @@ public class WaterSensorConsumer implements Runnable, ServletContextListener {
 
     @Override
     public void contextDestroyed(ServletContextEvent sce) {
-        System.out.println("==== ARRÊT DU CONSOMMATEUR CAPTEUR EAU ====");
+        System.out.println("==== ARRÊT DU CONSOMMATEUR CAPTEUR TRAFIC ====");
         if (executor != null) executor.shutdownNow();
         if (influxDBClient != null) influxDBClient.close();
     }
@@ -68,7 +62,7 @@ public class WaterSensorConsumer implements Runnable, ServletContextListener {
     public void run() {
         Properties props = new Properties();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, KAFKA_BROKER);
-        props.put(ConsumerConfig.GROUP_ID_CONFIG, "water-consumer-group");
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "traffic-consumer-group");
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, "org.apache.kafka.common.serialization.StringDeserializer");
         props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
@@ -82,7 +76,7 @@ public class WaterSensorConsumer implements Runnable, ServletContextListener {
             while (!Thread.currentThread().isInterrupted()) {
                 ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(1000));
                 for (ConsumerRecord<String, String> record : records) {
-                    processRecordWithAlerts(record, writeApi);
+                    processTrafficRecord(record, writeApi);
                 }
                 consumer.commitAsync();
             }
@@ -92,30 +86,36 @@ public class WaterSensorConsumer implements Runnable, ServletContextListener {
         }
     }
 
-    private void processRecordWithAlerts(ConsumerRecord<String, String> record, WriteApi writeApi) {
+    private void processTrafficRecord(ConsumerRecord<String, String> record, WriteApi writeApi) {
         try {
             JSONObject message = new JSONObject(record.value());
             String sensorId = message.getString("sensor_id");
-            double consommation = message.getDouble("consommation_L_min");
-            double quality = message.getDouble("quality");
+            int vehicles = message.getInt("vehicles_per_min");
+            double speed = message.getDouble("avg_speed_kmh");
             Instant timestamp = Instant.parse(message.getString("timestamp"));
 
             // Point de données pour InfluxDB
-            Point point = Point.measurement("water_consumption")
+            Point point = Point.measurement("traffic_data")
                     .addTag("sensor_id", sensorId)
-                    .addField("consumption_L_min", consommation)
-                    .addField("quality", quality)
+                    .addField("vehicles_per_min", vehicles)
+                    .addField("avg_speed_kmh", speed)
                     .time(timestamp, WritePrecision.MS);
 
             writeApi.writePoint(point);
 
             // Vérification des alertes
-            if (consommation > CONSOMMATION_ALERTE_SEUIL) {
-                triggerHighConsumptionAlert(sensorId, consommation, timestamp);
+            if (vehicles > TRAFFIC_DENSITY_ALERT) {
+                triggerAlert("traffic_alerts", sensorId, "high_traffic_density", vehicles, TRAFFIC_DENSITY_ALERT, timestamp);
+            }
+            if (speed < LOW_SPEED_ALERT) {
+                triggerAlert("traffic_alerts", sensorId, "low_speed", speed, LOW_SPEED_ALERT, timestamp);
+            }
+            if (speed > HIGH_SPEED_ALERT) {
+                triggerAlert("traffic_alerts", sensorId, "high_speed", speed, HIGH_SPEED_ALERT, timestamp);
             }
 
-            System.out.printf("[%s] Capteur: %s | Consommation: %.2f L/min | Qualité: %.1f%n",
-                    timestamp, sensorId, consommation, quality);
+            System.out.printf("[%s] Capteur: %s | Véhicules: %d/min | Vitesse: %.1f km/h%n",
+                    timestamp, sensorId, vehicles, speed);
 
         } catch (Exception e) {
             System.err.println("Erreur de traitement: " + record.value());
@@ -123,55 +123,21 @@ public class WaterSensorConsumer implements Runnable, ServletContextListener {
         }
     }
 
-    private void triggerHighConsumptionAlert(String sensorId, double consommation, Instant timestamp) {
-        // 1. Store alert in InfluxDB
-        Point alertPoint = Point.measurement("water_alerts")
+    private void triggerAlert(String measurement, String sensorId, String alertType,
+                              double value, double threshold, Instant timestamp) {
+        Point alertPoint = Point.measurement(measurement)
                 .addTag("sensor_id", sensorId)
-                .addTag("alert_type", "high_consumption")
-                .addField("value", consommation)
-                .addField("threshold", CONSOMMATION_ALERTE_SEUIL)
+                .addTag("alert_type", alertType)
+                .addField("value", value)
+                .addField("threshold", threshold)
                 .time(timestamp, WritePrecision.MS);
 
         try (WriteApi writeApi = influxDBClient.getWriteApi()) {
             writeApi.writePoint(alertPoint);
-
-            // 2. Send to external alert endpoint
-            sendWebhookAlert(sensorId, consommation, timestamp);
-
-            System.err.printf("!!! ALERTE !!! [%s] Capteur %s: Consommation élevée %.2f L/min (seuil: %.2f)%n",
-                    timestamp, sensorId, consommation, CONSOMMATION_ALERTE_SEUIL);
-
+            System.err.printf("!!! ALERTE !!! [%s] Capteur %s: %s %.2f (seuil: %.2f)%n",
+                    timestamp, sensorId, alertType.replace("_", " "), value, threshold);
         } catch (Exception e) {
             System.err.println("Échec de l'enregistrement de l'alerte: " + e.getMessage());
-        }
-    }
-
-    private void sendWebhookAlert(String sensorId, double consommation, Instant timestamp) {
-        try {
-            JSONObject alertPayload = new JSONObject();
-            alertPayload.put("sensor_id", sensorId);
-            alertPayload.put("consumption", consommation);
-            alertPayload.put("threshold", CONSOMMATION_ALERTE_SEUIL);
-            alertPayload.put("timestamp", timestamp.toString());
-            alertPayload.put("alert_type", "high_water_consumption");
-            alertPayload.put("severity", "warning");
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(ALERT_WEBHOOK_URL))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(alertPayload.toString()))
-                    .build();
-
-            httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenApply(HttpResponse::body)
-                    .thenAccept(response -> System.out.println("Alert sent successfully. Response: " + response))
-                    .exceptionally(e -> {
-                        System.err.println("Failed to send alert: " + e.getMessage());
-                        return null;
-                    });
-
-        } catch (Exception e) {
-            System.err.println("Error creating webhook request: " + e.getMessage());
         }
     }
 }

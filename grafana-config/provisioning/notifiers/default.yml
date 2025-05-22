@@ -1,0 +1,5 @@
+apiVersion: 1
+groups:
+  - name: default
+    interval: 1m
+    rules: []

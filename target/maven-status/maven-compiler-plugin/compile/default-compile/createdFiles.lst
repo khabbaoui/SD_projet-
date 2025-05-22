@@ -1,3 +1,5 @@
+com/othmane/sensor/consumer/TrafficSensorConsumer.class
 com/othmane/sensor/resource/SensorResource.class
 com/othmane/sensor/consumer/WaterSensorConsumer.class
+com/othmane/sensor/consumer/EnergySensorConsumer.class
 com/othmane/sensor/config/RestApplication.class
